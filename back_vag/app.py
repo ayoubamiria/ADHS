@@ -17,6 +17,7 @@ import smtplib
 import tempfile
 from email.message import EmailMessage
 from flask_cors import CORS
+import logging
 
 app = Flask(__name__)
 CORS(app)
@@ -3213,9 +3214,10 @@ def create_cluster_ha_spark():
 
 ##############################################################################################
 
+
 ##############################DISTANT MODE#####################################################
 ###########################CLASSIC CLUSTER HADOOP##############################################
-import logging
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',

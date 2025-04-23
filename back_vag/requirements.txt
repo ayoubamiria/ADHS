@@ -1,0 +1,7 @@
+# back/requirements.txt
+Flask>=2.0        # framework web
+Flask-Cors>=3.0   # pour autoriser les requêtes cross-origin
+paramiko>=2.0     # SSH / SFTP
+# autres si besoin
+requests>=2.25    # si tu appels des API externes
+gunicorn>=20.0    # pour déployer en production
