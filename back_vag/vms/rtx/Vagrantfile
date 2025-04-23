@@ -1,0 +1,13 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/trusty64"
+  config.vm.hostname = "rtx"
+  
+  # Redirection du port 9090 du guest vers le host
+  config.vm.network "forwarded_port", guest: 9090, host_ip: "10.200.243.227", host: 9090
+  
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "rtx"
+    vb.memory = "2048"
+    vb.cpus = "1"
+  end
+end
