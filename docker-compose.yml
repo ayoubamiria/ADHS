@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  back:
+    build:
+      context: ./back_vag
+    container_name: backend
+    ports:
+      - "5000:5000"
+    # Pas de volumes : on rebuild quand on change le back
+
+  front:
+    build:
+      context: ./ClusterForm
+      dockerfile: Dockerfile.dev
+    container_name: frontend
+    # Monte ton code en volume pour hot-reload instantané
+    volumes:
+      - ./front:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - back
+    environment:
+      # Pour que la Dev Server détecte bien les changements de fichiers
+      - CHOKIDAR_USEPOLLING=true
