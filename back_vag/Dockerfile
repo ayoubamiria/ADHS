@@ -9,6 +9,10 @@ ENV PYTHONUNBUFFERED=1
 # 3. Définir le dossier de travail à l'intérieur du conteneur
 WORKDIR /app
 
+# Installer Vagrant (et ses dépendances système si besoin)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends vagrant \
+    && rm -rf /var/lib/apt/lists/*
 # 4. Copier et installer les dépendances Python
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
