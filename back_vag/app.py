@@ -487,28 +487,34 @@ def index():
 
 @app.route('/create-vm', methods=['POST'])
 def create_vm():
-   
-    data = request.json
-    vm_name = data.get("vm_name")
-    box = data.get("box")
-    print(box)
-    ram = data.get("ram")
-    cpu = data.get("cpu")
-    network = data.get("network", "NAT")
-    recipient_email = data.get("mail")  # Champ email
+    try:
+        data = request.json
+        vm_name = data.get("vm_name")
+        box = data.get("box")
+        ram = data.get("ram")
+        cpu = data.get("cpu")
+        network = data.get("network", "NAT")
+        recipient_mail = data.get("mail")
 
-    if not vm_name or not box or not ram or not cpu:
-        return jsonify({"error": "Missing parameters"}), 400
+        # SSH connection parameters
+        ssh_host = "10.200.243.181"
+        ssh_user = "User"
+        ssh_password = "amiria123"
+        # Required params check
+        if not all([vm_name, box, ram, cpu, ssh_user, ssh_password]):
+            return jsonify({"error": "Missing parameters (ensure vm_name, box, ram, cpu, ssh_user, ssh_password)"}), 400
 
-    memory_mb = int(float(ram) * 1024)
+        # Compute memory in MB
+        memory_mb = int(float(ram) * 1024)
 
-    network_config = ""
-    ip_address = ""
-    if network != "NAT":
-        ip_address = f"192.168.56.{random.randint(2, 254)}"
-        network_config = f'  config.vm.network "private_network", ip: "{ip_address}"\n'
+        # Configure network
+        network_config = ""
+        if network != "NAT":
+            ip_address = f"192.168.56.{random.randint(2, 254)}"
+            network_config = f'  config.vm.network "private_network", ip: "{ip_address}"\n'
 
-    vagrantfile_content = f"""Vagrant.configure("2") do |config|
+        # Vagrantfile content
+        vagrantfile_content = f"""Vagrant.configure("2") do |config|
   config.vm.box = "{box}"
   config.vm.hostname = "{vm_name}"
 {network_config}  config.vm.provider "virtualbox" do |vb|
@@ -519,40 +525,94 @@ def create_vm():
 end
 """
 
-    vm_path = os.path.join(".", "vms", vm_name)
-    os.makedirs(vm_path, exist_ok=True)
+        # Establish SSH connection to host (even if localhost)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            ssh.connect(
+                hostname=ssh_host,
+                username=ssh_user,
+                password=ssh_password,
+                look_for_keys=False,
+                allow_agent=False
+            )
+        except Exception as e:
+            return jsonify({"error": f"SSH connection failed: {e}"}), 500
 
-    vagrantfile_path = os.path.join(vm_path, "Vagrantfile")
-    with open(vagrantfile_path, "w") as vf:
-        vf.write(vagrantfile_content)
-
-    try:
-        subprocess.run(["vagrant", "up"], cwd=vm_path, check=True)
-
-        if network == "NAT":
-            ssh_config = subprocess.check_output(["vagrant", "ssh-config"], cwd=vm_path, universal_newlines=True)
-            hostname_line = ""
-            port_line = ""
-            for line in ssh_config.splitlines():
-                if line.strip().startswith("HostName"):
-                    hostname_line = line.strip().split()[1]
-                if line.strip().startswith("Port"):
-                    port_line = line.strip().split()[1]
-            ip_address = hostname_line
-            port = port_line
+        # Detect remote OS by running 'uname'
+        stdin, stdout, stderr = ssh.exec_command('uname')
+        if stdout.channel.recv_exit_status() == 0:
+            # Linux host
+            base_dir = f"/home/{ssh_user}/vms"
+            vm_dir   = f"{base_dir}/{vm_name}"
+            up_cmd   = f"cd '{vm_dir}' && vagrant up"
+            encoding = 'utf-8'
         else:
-            port = "22"
+            # Windows host (PowerShell)
+            base_dir = f"C:\\Users\\{ssh_user}\\vms"
+            vm_dir   = f"{base_dir}\\{vm_name}"
+            # Échappement du chemin avec des guillemets doubles, et usage de && à la place de ;
+            up_cmd   = f'cd /d "{vm_dir}" && vagrant up'
+            encoding = 'cp1252'
 
+
+        # Create remote directories and write Vagrantfile via SFTP
+        sftp = ssh.open_sftp()
+        try:
+            for directory in (base_dir, vm_dir):
+                try:
+                    sftp.stat(directory)
+                except IOError:
+                    sftp.mkdir(directory)
+            # Write Vagrantfile
+            remote_vagrantfile = os.path.join(vm_dir, 'Vagrantfile')
+            with sftp.file(remote_vagrantfile, 'w') as vf:
+                vf.write(vagrantfile_content)
+        finally:
+            sftp.close()
+
+        # Run 'vagrant up' on remote host
+        stdin, stdout, stderr = ssh.exec_command(up_cmd)
+        exit_status = stdout.channel.recv_exit_status()
+        # Read stderr with appropriate encoding
+        err = stderr.read().decode(encoding, errors='replace')
+        ssh.close()
+
+        if exit_status != 0:
+            return jsonify({"error": f"Remote 'vagrant up' failed: {err}"}), 500
+
+        # Retrieve VM SSH details
+        if network == "NAT":
+            # Reconnect to run ssh-config command
+            ssh.connect(ssh_host, username=ssh_user, password=ssh_password)
+            cmd = f"cd '{vm_dir}' && vagrant ssh-config"
+            stdin_cfg, stdout_cfg, stderr_cfg = ssh.exec_command(cmd)
+            cfg = stdout_cfg.read().decode(encoding, errors='replace')
+            ssh.close()
+            hostname = port = None
+            for line in cfg.splitlines():
+                if line.strip().startswith("HostName"):
+                    hostname = line.split()[1]
+                if line.strip().startswith("Port"):
+                    port = line.split()[1]
+            ip_address = hostname
+        else:
+            # For private network, ip_address was set above
+            port = '22'
+
+        # Prepare response
         vm_details = {
-            "message": f"VM {vm_name} is created",
-            "vm_name": vm_name,
+            "message":   f"VM {vm_name} créée sur {ssh_host}",
+            "vm_name":   vm_name,
             "ipAddress": ip_address,
-            "port": port,
-            "vm_folder_path": os.path.abspath(vm_path)
+            "port":      port,
+            "vm_folder": vm_dir
         }
-        if recipient_email:
-            send_email_with_vm_credentials(recipient_email, vm_details)
-        
+
+        # Send credentials via email if requested
+        if recipient_mail:
+            send_email_with_vm_credentials(recipient_mail, vm_details)
+
         return jsonify(vm_details), 200
     except subprocess.CalledProcessError as e:
         return jsonify({"error": str(e)}), 500
