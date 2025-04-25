@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adh-deployment
+  namespace: ayoub
+  labels:
+    app: ADHS
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ADHS
+  template:
+    metadata:
+      labels:
+        app: ADHS
+    spec:
+      containers:
+        - name: adh-container
+          image: ayoub126/frontend:latest  # Remplace par ton image réelle
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: adh-volume
+              mountPath: /data
+      volumes:
+        - name: adh-volume
+          persistentVolumeClaim:
+            claimName: database-ADHS
+      imagePullSecrets:
+        - name: dockerhub  # Nom du secret Docker

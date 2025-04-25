@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adh-backend-deployment
+  namespace: ayoub
+  labels:
+    app: ADHS-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ADHS-backend
+  template:
+    metadata:
+      labels:
+        app: ADHS-backend
+    spec:
+      containers:
+        - name: adh-backend-container
+          image: ayoub126/backend:latest # Remplace-moi
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          volumeMounts:
+            - name: backend-volume
+              mountPath: /data
+      volumes:
+        - name: backend-volume
+          persistentVolumeClaim:
+            claimName: database-ADHS
+      imagePullSecrets:
+        - name: dockerhub  # Même secret Docker que pour le frontend

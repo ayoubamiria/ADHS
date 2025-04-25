@@ -1,0 +1,88 @@
+---
+- name: Build et push des images Docker (backend & frontend)
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    docker_username: "ayoub126"
+    backend_image: "backend:latest"
+    frontend_image: "frontend:latest"
+    backend_context: "./back_vag"
+    backend_dockerfile: "Dockerfile"
+    frontend_context: "./ClusterForm"
+    frontend_dockerfile: "Dockerfile.dev"
+    docker_password: "{{ docker_password }}"
+
+  tasks:
+
+    - name: Builder l'image Docker du backend
+      shell: >
+        docker build -t {{ backend_image }}
+        -f {{ backend_context }}/{{ backend_dockerfile }}
+        {{ backend_context }}
+
+    - name: Builder l'image Docker du frontend
+      shell: >
+        docker build -t {{ frontend_image }}
+        -f {{ frontend_context }}/{{ frontend_dockerfile }}
+        {{ frontend_context }}
+
+    - name: Connexion à Docker Hub
+      shell: echo "{{ docker_password }}" | docker login -u "{{ docker_username }}" --password-stdin
+    
+    - name: Retagger l'image backend pour ton repository Docker Hub
+      shell: docker tag {{ backend_image }} {{ docker_username }}/backend:latest
+
+    - name: Pusher l'image backend
+      shell: docker push {{ docker_username }}/backend:latest
+
+    - name: Retagger l'image frontend pour ton repository Docker Hub
+      shell: docker tag {{ frontend_image }} {{ docker_username }}/frontend:latest
+
+    - name: Pusher l'image frontend
+      shell: docker push {{ docker_username }}/frontend:latest
+
+- name: Deploy Kubernetes Resources on k8s-server
+  hosts: k8s-server
+  #become: true  # Lancer les commandes en tant qu'utilisateur privilégié
+  gather_facts: no
+  tasks:
+    # Créer le namespace si il n'existe pas
+    - name: Create namespace if not exists
+      command: kubectl create namespace ayoub
+      ignore_errors: yes
+
+    # Copier les fichiers de déploiement depuis le local vers le serveur k8s
+    - name: Copy deployment files to Kubernetes server
+      copy:
+        src: "./k8s/{{ item }}"
+        dest: "/tmp/{{ item | basename }}"
+        remote_src: no
+
+      with_items:
+        - deployment_back.yaml
+        - service_front.yaml
+        - pvc.yaml
+        - deployment_front.yaml
+        - service_back.yaml
+
+    # Appliquer les service frontends
+    - name: Apply Kubernetes frontend service
+      command: kubectl apply -f /tmp/service_front.yaml
+
+    # Appliquer le Persistent Volume Claim (PVC) sur le serveur k8s
+    - name: Apply Kubernetes Persistent Volume Claim
+      command: kubectl apply -f /tmp/pvc.yaml
+
+    # Appliquer le service backend Kubernetes sur le serveur k8s
+    - name: Apply Kubernetes backend service
+      command: kubectl apply -f /tmp/service_back.yaml
+
+    # Appliquer le Persistent Volume Claim (PVC) sur le serveur k8s
+    - name: Apply Kubernetes backend deploiement
+      command: kubectl apply -f /tmp/deployment_back.yaml
+
+    # Appliquer le service backend Kubernetes sur le serveur k8s
+    - name: Apply Kubernetes frontend deploy
+      command: kubectl apply -f /tmp/deployment_front.yaml
