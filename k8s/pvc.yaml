@@ -11,4 +11,6 @@ spec:
   resources:
     requests:
       storage: 500Mi
-  storageClassName: nfs-client  # Utilise le StorageClass dynamique NFS
+  #storageClassName: nfs-client  # Utilise le StorageClass dynamique NFS
+  volumeName: "database-adhs-pv"
+
