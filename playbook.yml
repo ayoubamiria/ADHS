@@ -61,12 +61,6 @@
         msg: "python3 n'est pas installé sur le serveur k8s-server."
       when: py3_check.stdout == ""
 
-    - name: Créer le namespace si nécessaire
-      ansible.builtin.command: kubectl create namespace ayoub
-      register: create_ns
-      failed_when: false
-      changed_when: "'created' in create_ns.stdout"
-
     - name: Copier puis appliquer tous les manifests Kubernetes
       block:
         - name: Copier {{ item }} vers /tmp
