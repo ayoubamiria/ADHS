@@ -66,10 +66,14 @@
         - pvc.yaml
         - deployment_front.yaml
         - service_back.yaml
+        - pv.yaml
 
     # Appliquer les service frontends
     - name: Apply Kubernetes frontend service
       command: kubectl apply -f /tmp/service_front.yaml
+    # Appliquer le Persistent Volume Claim (PVC) sur le serveur k8s
+    - name: Apply Kubernetes Persistent Volume
+      command: kubectl apply -f /tmp/pv.yaml
 
     # Appliquer le Persistent Volume Claim (PVC) sur le serveur k8s
     - name: Apply Kubernetes Persistent Volume Claim
