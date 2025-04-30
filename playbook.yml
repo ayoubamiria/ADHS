@@ -49,10 +49,11 @@
 
   tasks:
     - name: Copier les fichiers de déploiement sur le serveur
-      ansible.builtin.copy:
-        src: "./k8s/{{ item }}"
-        dest: "/tmp/{{ item }}"
-      loop:
+      copy:
+        src: "k8s/{{ item }}"
+        dest: "/tmp/{{ item | basename }}"
+        remote_src: no
+      with_items:
         - deployment_back.yaml
         - service_front.yaml
         - pvc.yaml
