@@ -42,16 +42,27 @@
 
     - name: Pusher l'image frontend
       shell: docker push {{ docker_username }}/frontend:latest
-    - name: copy des fichier de deploy
-      shell: scp -r /var/lib/jenkins/workspace/ADHS/k8s/ user@10.110.190.178:/home/user/
 
 - name: Déploiement Kubernetes sur k8s-server
   hosts: k8s-server
   gather_facts: no
 
   tasks:
+    - name: Copier les fichiers de déploiement sur le serveur
+      copy:
+        src: "/var/lib/jenkins/workspace/ADHS/k8s/{{ item }}"
+        dest: "/tmp/{{ item | basename }}"
+        remote_src: no
+      with_items:
+        - deployment_back.yaml
+        - service_front.yaml
+        - pvc.yaml
+        - deployment_front.yaml
+        - service_back.yaml
+        - pv.yaml
+
     - name: Appliquer les fichiers Kubernetes
-      command: kubectl apply -f /home/user/k8s/{{ item }}
+      command: kubectl apply -f /tmp/{{ item }}
       loop:
         - pv.yaml
         - pvc.yaml
