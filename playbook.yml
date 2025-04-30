@@ -48,13 +48,11 @@
   gather_facts: no
 
   vars:
-    # => on s’assure d’utiliser python3 et d’activer le pipelining pour éviter
-    # les appels aux module_utils Python sur la cible
     ansible_python_interpreter: /usr/bin/python3
     ansible_ssh_pipelining: true
 
     k8s_workspace: "/var/lib/jenkins/workspace/ADHS/k8s"
-    k8s_dest: "/tmp"
+    k8s_dest: "/tmp/k8s"
     k8s_files:
       - pv.yaml
       - pvc.yaml
@@ -64,15 +62,23 @@
       - deployment_front.yaml
 
   tasks:
-    - name: Synchroniser tout le dossier k8s vers la cible
+    - name: Créer le dossier de destination {{ k8s_dest }} sur la cible
+      ansible.builtin.file:
+        path: "{{ k8s_dest }}"
+        state: directory
+        mode: '0755'
+
+    - name: Synchroniser tout le dossier k8s vers la cible sans préserver les perms
       ansible.builtin.synchronize:
         src: "{{ k8s_workspace }}/"
         dest: "{{ k8s_dest }}/"
         mode: push
-        # tu peux ajuster les options rsync si besoin
         rsync_opts:
-          - "--times"
-          - "--omit-dir-times"
+          - "--times"            # pour conserver les dates de modification
+          - "--omit-dir-times"   # sans modifier les dates des répertoires
+          - "--no-perms"         # ne plus préserver les permissions
+          - "--no-owner"         # ne plus préserver le propriétaire
+          - "--no-group"         # ne plus préserver le groupe
 
     - name: Appliquer les manifests Kubernetes
       ansible.builtin.command:
