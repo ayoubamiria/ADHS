@@ -6,45 +6,42 @@
 
   vars:
     docker_username: "ayoub126"
-    docker_password: "{{ docker_password }}"
     backend_image: "backend:latest"
     frontend_image: "frontend:latest"
     backend_context: "./back_vag"
     backend_dockerfile: "Dockerfile"
     frontend_context: "./ClusterForm"
     frontend_dockerfile: "Dockerfile.dev"
+    docker_password: "{{ docker_password }}"
 
   tasks:
+
     - name: Builder l'image Docker du backend
-      ansible.builtin.shell: >
+      shell: >
         docker build -t {{ backend_image }}
         -f {{ backend_context }}/{{ backend_dockerfile }}
         {{ backend_context }}
-      args:
-        chdir: "{{ backend_context }}"
 
     - name: Builder l'image Docker du frontend
-      ansible.builtin.shell: >
+      shell: >
         docker build -t {{ frontend_image }}
         -f {{ frontend_context }}/{{ frontend_dockerfile }}
         {{ frontend_context }}
-      args:
-        chdir: "{{ frontend_context }}"
 
     - name: Connexion à Docker Hub
-      ansible.builtin.shell: echo "{{ docker_password }}" | docker login -u "{{ docker_username }}" --password-stdin
-
-    - name: Retagger l'image backend pour Docker Hub
-      ansible.builtin.shell: docker tag {{ backend_image }} {{ docker_username }}/backend:latest
+      shell: echo "{{ docker_password }}" | docker login -u "{{ docker_username }}" --password-stdin
+    
+    - name: Retagger l'image backend pour ton repository Docker Hub
+      shell: docker tag {{ backend_image }} {{ docker_username }}/backend:latest
 
     - name: Pusher l'image backend
-      ansible.builtin.shell: docker push {{ docker_username }}/backend:latest
+      shell: docker push {{ docker_username }}/backend:latest
 
-    - name: Retagger l'image frontend pour Docker Hub
-      ansible.builtin.shell: docker tag {{ frontend_image }} {{ docker_username }}/frontend:latest
+    - name: Retagger l'image frontend pour ton repository Docker Hub
+      shell: docker tag {{ frontend_image }} {{ docker_username }}/frontend:latest
 
     - name: Pusher l'image frontend
-      ansible.builtin.shell: docker push {{ docker_username }}/frontend:latest
+      shell: docker push {{ docker_username }}/frontend:latest
 
 - name: Déploiement Kubernetes sur k8s-server
   hosts: k8s-server
