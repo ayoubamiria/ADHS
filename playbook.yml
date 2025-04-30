@@ -46,38 +46,35 @@
 - name: Déploiement Kubernetes sur k8s-server
   hosts: k8s-server
   gather_facts: no
+
   vars:
-    # indique à Ansible d’utiliser python3 sur la cible
+    # => on s’assure d’utiliser python3 et d’activer le pipelining pour éviter
+    # les appels aux module_utils Python sur la cible
     ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_pipelining: true
+
+    k8s_workspace: "/var/lib/jenkins/workspace/ADHS/k8s"
+    k8s_dest: "/tmp"
+    k8s_files:
+      - pv.yaml
+      - pvc.yaml
+      - service_back.yaml
+      - service_front.yaml
+      - deployment_back.yaml
+      - deployment_front.yaml
 
   tasks:
-    - name: Vérifier la présence de python3
-      ansible.builtin.raw: which python3
-      register: py3_check
-      changed_when: false
+    - name: Synchroniser tout le dossier k8s vers la cible
+      ansible.builtin.synchronize:
+        src: "{{ k8s_workspace }}/"
+        dest: "{{ k8s_dest }}/"
+        mode: push
+        # tu peux ajuster les options rsync si besoin
+        rsync_opts:
+          - "--times"
+          - "--omit-dir-times"
 
-    - name: Échec si python3 n'est pas trouvé
-      ansible.builtin.fail:
-        msg: "python3 n'est pas installé sur le serveur k8s-server."
-      when: py3_check.stdout == ""
-
-    - name: Copier puis appliquer tous les manifests Kubernetes
-      block:
-        - name: Copier {{ item }} vers /tmp
-          ansible.builtin.copy:
-            src: "/var/lib/jenkins/workspace/ADHS/k8s/{{ item }}"
-            dest: "/tmp/{{ item }}"
-            mode: '0644'
-          loop: "{{ k8s_files }}"
-
-        - name: Appliquer {{ item }}
-          ansible.builtin.shell: kubectl apply -f /tmp/{{ item }}
-          loop: "{{ k8s_files }}"
-      vars:
-        k8s_files:
-          - pv.yaml
-          - pvc.yaml
-          - service_back.yaml
-          - service_front.yaml
-          - deployment_back.yaml
-          - deployment_front.yaml
+    - name: Appliquer les manifests Kubernetes
+      ansible.builtin.command:
+        cmd: kubectl apply -f {{ k8s_dest }}/{{ item }}
+      loop: "{{ k8s_files }}"
