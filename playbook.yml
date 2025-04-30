@@ -48,12 +48,9 @@
   gather_facts: no
 
   vars:
-    ansible_python_interpreter: /usr/bin/python3
-    ansible_ssh_pipelining: true
-
-    k8s_workspace: "/var/lib/jenkins/workspace/ADHS/k8s"
-    k8s_dest: "/tmp/k8s"
-    k8s_files:
+    workspace: "/var/lib/jenkins/workspace/ADHS/k8s"
+    dest: "/tmp/k8s"
+    files:
       - pv.yaml
       - pvc.yaml
       - service_back.yaml
@@ -62,25 +59,23 @@
       - deployment_front.yaml
 
   tasks:
-    - name: Créer le dossier de destination {{ k8s_dest }} sur la cible
-      ansible.builtin.file:
-        path: "{{ k8s_dest }}"
-        state: directory
-        mode: '0755'
+    - name: Créer le namespace si nécessaire
+      raw: kubectl create namespace ayoub || true
 
-    - name: Synchroniser tout le dossier k8s vers la cible sans préserver les perms
-      ansible.builtin.synchronize:
-        src: "{{ k8s_workspace }}/"
-        dest: "{{ k8s_dest }}/"
-        mode: push
-        rsync_opts:
-          - "--times"            # pour conserver les dates de modification
-          - "--omit-dir-times"   # sans modifier les dates des répertoires
-          - "--no-perms"         # ne plus préserver les permissions
-          - "--no-owner"         # ne plus préserver le propriétaire
-          - "--no-group"         # ne plus préserver le groupe
+    - name: Créer le répertoire {{ dest }} sur la cible
+      raw: mkdir -p {{ dest }}
 
-    - name: Appliquer les manifests Kubernetes
-      ansible.builtin.command:
-        cmd: kubectl apply -f {{ k8s_dest }}/{{ item }}
-      loop: "{{ k8s_files }}"
+    - name: Synchroniser tout le dossier k8s vers le serveur
+      delegate_to: localhost
+      shell: |
+        rsync -avz \
+          --omit-dir-times --no-perms --no-owner --no-group \
+          -e "ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+          "{{ workspace }}/" \
+          "{{ ansible_user }}@{{ inventory_hostname }}:{{ dest }}/"
+
+    - name: Appliquer tous les manifests Kubernetes
+      raw: |
+        for f in {{ files | join(' ') }}; do
+          kubectl apply -f {{ dest }}/$f
+        done
