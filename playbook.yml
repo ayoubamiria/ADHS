@@ -46,27 +46,44 @@
 - name: Déploiement Kubernetes sur k8s-server
   hosts: k8s-server
   gather_facts: no
+  vars:
+    # indique à Ansible d’utiliser python3 sur la cible
+    ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-    - name: Copier les fichiers de déploiement sur le serveur
-      copy:
-        src: "/var/lib/jenkins/workspace/ADHS/k8s/{{ item }}"
-        dest: "/tmp/{{ item | basename }}"
-        remote_src: no
-      with_items:
-        - deployment_back.yaml
-        - service_front.yaml
-        - pvc.yaml
-        - deployment_front.yaml
-        - service_back.yaml
-        - pv.yaml
+    - name: Vérifier la présence de python3
+      ansible.builtin.raw: which python3
+      register: py3_check
+      changed_when: false
 
-    - name: Appliquer les fichiers Kubernetes
-      command: kubectl apply -f /tmp/{{ item }}
-      loop:
-        - pv.yaml
-        - pvc.yaml
-        - service_back.yaml
-        - service_front.yaml
-        - deployment_back.yaml
-        - deployment_front.yaml
+    - name: Échec si python3 n'est pas trouvé
+      ansible.builtin.fail:
+        msg: "python3 n'est pas installé sur le serveur k8s-server."
+      when: py3_check.stdout == ""
+
+    - name: Créer le namespace si nécessaire
+      ansible.builtin.command: kubectl create namespace ayoub
+      register: create_ns
+      failed_when: false
+      changed_when: "'created' in create_ns.stdout"
+
+    - name: Copier puis appliquer tous les manifests Kubernetes
+      block:
+        - name: Copier {{ item }} vers /tmp
+          ansible.builtin.copy:
+            src: "/var/lib/jenkins/workspace/ADHS/k8s/{{ item }}"
+            dest: "/tmp/{{ item }}"
+            mode: '0644'
+          loop: "{{ k8s_files }}"
+
+        - name: Appliquer {{ item }}
+          ansible.builtin.shell: kubectl apply -f /tmp/{{ item }}
+          loop: "{{ k8s_files }}"
+      vars:
+        k8s_files:
+          - pv.yaml
+          - pvc.yaml
+          - service_back.yaml
+          - service_front.yaml
+          - deployment_back.yaml
+          - deployment_front.yaml
