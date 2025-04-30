@@ -27,6 +27,6 @@ spec:
       volumes:
         - name: backend-volume
           persistentVolumeClaim:
-            claimName: database-ADHS
+            claimName: database-adhs
       imagePullSecrets:
         - name: dockerhub  # Même secret Docker que pour le frontend

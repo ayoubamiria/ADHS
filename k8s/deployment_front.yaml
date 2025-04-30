@@ -27,6 +27,6 @@ spec:
       volumes:
         - name: adh-volume
           persistentVolumeClaim:
-            claimName: database-ADHS
+            claimName: database-adhs
       imagePullSecrets:
         - name: dockerhub  # Nom du secret Docker
