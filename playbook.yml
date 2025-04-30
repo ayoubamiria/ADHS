@@ -50,7 +50,7 @@
   tasks:
     - name: Copier les fichiers de déploiement sur le serveur
       copy:
-        src: "k8s/{{ item }}"
+        src: "/var/lib/jenkins/workspace/ADHS/k8s/{{ item }}"
         dest: "/tmp/{{ item | basename }}"
         remote_src: no
       with_items:
