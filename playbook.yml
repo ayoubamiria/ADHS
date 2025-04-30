@@ -48,12 +48,6 @@
   gather_facts: no
 
   tasks:
-    - name: Créer le namespace si il n'existe pas
-      ansible.builtin.command: kubectl create namespace ayoub
-      register: create_ns
-      failed_when: false
-      changed_when: "'created' in create_ns.stdout"
-
     - name: Copier les fichiers de déploiement sur le serveur
       ansible.builtin.copy:
         src: "./k8s/{{ item }}"
