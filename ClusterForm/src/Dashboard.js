@@ -35,8 +35,8 @@ const Dashboard = () => {
         requestData.remote_password = machine.remote_password;
         requestData.remote_os = machine.remote_os;
       }
-
-      const response = await fetch("http://localhost:5000/start-vm", {
+      const API = process.env.REACT_APP_API_URL;
+      const response = await fetch(API+"/start-vm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -71,8 +71,8 @@ const Dashboard = () => {
         requestData.remote_password = machine.remote_password;
         requestData.remote_os = machine.remote_os;
       }
-
-      const response = await fetch("http://localhost:5000/stop-vm", {
+      var API = process.env.REACT_APP_API_URL;
+      const response = await fetch(API+"/stop-vm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -113,8 +113,8 @@ const Dashboard = () => {
         requestData.remote_password = machine.remote_password;
         requestData.remote_os = machine.remote_os;
       }
-
-      const response = await fetch("http://localhost:5000/delete-vm", {
+      var API = process.env.REACT_APP_API_URL;
+      const response = await fetch(API+"/delete-vm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),
@@ -152,8 +152,8 @@ const Dashboard = () => {
         requestData.remote_password = machine.remote_password;
         requestData.remote_os = machine.remote_os;
       }
-
-      const response = await fetch("http://localhost:5000/open-terminal-vm", {
+      var API = process.env.REACT_APP_API_URL;
+      const response = await fetch(API+"/open-terminal-vm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestData),

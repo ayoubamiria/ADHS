@@ -34,7 +34,8 @@ export default function Formulaire() {
 
   useEffect(() => {
     if (!isRemote) {
-      fetch("http://localhost:5000/get-cpu-info")
+      var API = process.env.REACT_APP_API_URL;
+      fetch(API+"/get-cpu-info")
         .then((res) => res.json())
         .then((data) => {
           if (data.maxCpu) setMaxCpu(data.maxCpu);
@@ -44,9 +45,10 @@ export default function Formulaire() {
         .catch((err) => console.error("Erreur lors de la récupération des infos système:", err));
     }
     else {
+      var API = process.env.REACT_APP_API_URL;
       console.log("Mode distant");
       // Pour le mode distant, on appelle l'endpoint pour récupérer les infos système de la machine distante.
-      fetch("http://localhost:5000/get-remote-cpu-info", {
+      fetch(API+"/get-remote-cpu-info", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,9 +132,10 @@ export default function Formulaire() {
     }
 
     try {
+      var API = process.env.REACT_APP_API_URL;
       const endpoint = isRemote
-        ? "http://localhost:5000/create-vm-remote"
-        : "http://localhost:5000/create-vm";
+        ? API+"/create-vm-remote"
+        : API+"/create-vm";
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
