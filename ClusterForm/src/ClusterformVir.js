@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import OSVersionSelect from "./OSVersionSelect";
 import CustomBox from "./CustomBox";
 
-
 export default function ClusterFormVir() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -124,7 +123,7 @@ export default function ClusterFormVir() {
         isSparkSelected,
         nodeDetails: [...nodeDetails, currentNodeData],
         customBoxes,
-        remote_ip: "10.200.243.40",
+        remote_ip: "192.168.0.27",
         remote_user: "User",
         remote_password: "amiria123",
         mail: "amiriaayoub@gmail.com"
@@ -132,13 +131,11 @@ export default function ClusterFormVir() {
 
       let endpoint = "";
       if (isHaSelected) {
-        var API = process.env.REACT_APP_API_URL;
         endpoint = isSparkSelected
-          ? API+"/create-cluster-HA-spark-remote"
-          : API+"/create-cluster-HA-remote";
+          ? "http://localhost:5000/create-cluster-HA-spark-remote"
+          : "http://localhost:5000/create-cluster-HA-remote";
       } else {
-        var API = process.env.REACT_APP_API_URL;
-        endpoint = API+"/create-cluster-remote";
+        endpoint = "http://localhost:5000/create-cluster-remote";
       }
 
       fetch(endpoint, {

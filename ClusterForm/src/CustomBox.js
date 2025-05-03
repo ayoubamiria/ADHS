@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 
 const CustomBox = ({ onClose, onAddBox }) => {
     const [boxName, setBoxName] = useState("");
-    const [isoFile, setIsoFile] = useState(null);
-    const [isoUrl, setIsoUrl] = useState("");
+    const [isoImage, setIsoImage] = useState(null);
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [description, setDescription] = useState("");
@@ -17,18 +16,19 @@ const CustomBox = ({ onClose, onAddBox }) => {
     });
 
     const handleAddBox = () => {
-        if (boxName.trim() && (isoFile || isoUrl) && username && password) {
-            onAddBox({
-                name: boxName,
-                isoImage: isoFile ? isoFile.name : isoUrl,
-                username,
-                password,
-                description,
-                software
+        if (boxName.trim() && isoImage && username && password) {
+            // Appelle la fonction pour ajouter la box avec tous les détails
+            onAddBox({ 
+                name: boxName, 
+                isoImage, 
+                username, 
+                password, 
+                description, 
+                software 
             });
+            // Réinitialise les champs
             setBoxName("");
-            setIsoFile(null);
-            setIsoUrl("");
+            setIsoImage(null);
             setUsername("");
             setPassword("");
             setDescription("");
@@ -42,23 +42,19 @@ const CustomBox = ({ onClose, onAddBox }) => {
             });
             onClose();
         } else {
-            alert("Les champs marqués * sont requis.");
+            alert("Tous les champs sont requis.");
         }
     };
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
-        setIsoFile(file || null);
-        if (file) setIsoUrl(""); // Reset l'URL si fichier sélectionné
-    };
-
-    const handleUrlChange = (e) => {
-        setIsoUrl(e.target.value);
-        if (e.target.value) setIsoFile(null); // Reset le fichier si URL saisie
+        if (file) {
+            setIsoImage(file.name); // Stocke le nom du fichier pour l'affichage
+        }
     };
 
     const handleSoftwareChange = (softwareName) => {
-        setSoftware(prev => ({
+        setSoftware((prev) => ({
             ...prev,
             [softwareName]: !prev[softwareName],
         }));
@@ -68,43 +64,30 @@ const CustomBox = ({ onClose, onAddBox }) => {
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white p-6 rounded-lg shadow-lg w-96">
                 <h2 className="text-lg font-bold mb-4">Create your new box</h2>
-
-                <label className="block text-sm font-medium">Box name * :</label>
+                
+                <label className="block text-sm font-medium">Box name :</label>
                 <input
-                    placeholder="Set your box name..."
                     type="text"
                     value={boxName}
                     onChange={(e) => setBoxName(e.target.value)}
                     className="w-full p-2 border rounded mb-4"
+                    required
                 />
 
-                <label className="block text-sm font-medium mb-2">ISO image * :</label>
+                <label className="block text-sm font-medium mb-2">ISO image :</label>
                 <input
                     type="file"
                     onChange={handleFileChange}
-                    className="w-full mb-2"
+                    className="w-full mb-4"
                     accept=".iso"
+                    required
                 />
-                <div className="text-center mb-2 text-sm text-gray-500">OR</div>
-                <input
-                    type="url"
-                    value={isoUrl}
-                    placeholder="Enter an ISO URL..."
-                    onChange={handleUrlChange}
-                    className="w-full p-2 border rounded mb-4"
-                />
-                {isoFile && (
-                    <p className="text-gray-600 text-sm mb-4">
-                        Selected file: {isoFile.name}
-                    </p>
-                )}
+                {isoImage && <p className="text-gray-600">Select a file {isoImage}</p>}
 
                 <div className="flex space-x-4 mb-4">
                     <div className="flex-1">
-                        <label className="block text-sm font-medium mb-2">User name*:</label>
+                        <label className="block text-sm font-medium mb-2">User name :</label>
                         <input
-                            placeholder="Set your username..."
-
                             type="text"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
@@ -113,11 +96,9 @@ const CustomBox = ({ onClose, onAddBox }) => {
                         />
                     </div>
                     <div className="flex-1">
-                        <label className="block text-sm font-medium mb-2">User password*:</label>
+                        <label className="block text-sm font-medium mb-2">User password :</label>
                         <input
                             type="password"
-                            placeholder="Set your password..."
-
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             className="w-full p-2 border rounded"
@@ -130,8 +111,6 @@ const CustomBox = ({ onClose, onAddBox }) => {
                 <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describe your box ..."
-
                     className="w-full p-2 border rounded mb-4"
                     rows="3"
                 />
