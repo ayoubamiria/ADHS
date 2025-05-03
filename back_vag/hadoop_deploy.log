@@ -1,0 +1,15 @@
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.100.7:5000
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 260-111-522
+INFO:werkzeug:127.0.0.1 - - [03/May/2025 22:00:15] "OPTIONS /connect_and_get_templates HTTP/1.1" 200 -
+INFO:paramiko.transport:Connected (version 2.0, client OpenSSH_9.2p1)
+INFO:paramiko.transport:Authentication (publickey) failed.
+INFO:paramiko.transport:Authentication (password) successful!
+INFO:werkzeug:127.0.0.1 - - [03/May/2025 22:00:17] "POST /connect_and_get_templates HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [03/May/2025 22:00:52] "OPTIONS /create_vmprox HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [03/May/2025 22:00:53] "POST /create_vmprox HTTP/1.1" 200 -

@@ -1,8 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import DistantConfig from "./DistantConfig";
-import DistantConfigVir from "./DistantConfig";
-import FormulaireVir from "./formulaire";
+import DistantConfig from "./DistantConfigVir";
+import DistantConfigVir from "./DistantConfigVir";
+import FormulaireVir from "./formulaireVir";
 import ClusterVir from "./ClusterVir";
 import "./Home.css"; // Importation du fichier CSS
 
@@ -34,7 +34,7 @@ function App() {
       navigate("/formulaire");
     } else if (platform === "VirtualBox" && option === "Virtual Machine") {
       if (mode === "Local mode") {
-        navigate("/formulaire", { state: { mode: "local" } });
+        navigate("/formulaireVir", { state: { mode: "local" } });
       } else if (mode === "Distant mode") {
         navigate("/DistantConfig", { state: { mode: "distant", option: "vm" } });
       }
