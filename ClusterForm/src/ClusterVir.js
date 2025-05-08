@@ -1,11 +1,19 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 const ClusterVir = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const {
+    
+    remote_ip,
+    remote_user,
+    remote_password,
+  
+  } = location.state || {};
 
-  const [clusterName, setClusterName] = useState("aa");
-  const [clusterDescription, setClusterDescription] = useState("ttt");
+  const [clusterName, setClusterName] = useState("");
+  const [clusterDescription, setClusterDescription] = useState("");
   const [nodeCount, setNodeCount] = useState(1);
   const [clusterType, setClusterType] = useState({
     Ha: false,
@@ -39,6 +47,9 @@ const ClusterVir = () => {
       isHaSelected,
       isSparkSelected,
       nodeDetails: [], // À compléter dans la configuration des nœuds
+      remote_ip,
+      remote_user,
+      remote_password,
     };
 
     // Passage des données vers le formulaire de configuration des nœuds

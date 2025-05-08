@@ -16,8 +16,17 @@ export default function ClusterFormVir() {
     clusterType = { Ha: false, Spark: false, Classic: true },
     isHaSelected = false,
     isSparkSelected = false,
+    remote_ip,
+    remote_user,
+    remote_password,
   } = location.state || {};
 
+  useEffect(() => {
+    console.log("Données reçues dans ClusterFormVir:", location.state);
+  }, [location.state]);
+  // Vérification de l'option "distant" dans le state
+  const remoteConfig = location.state || {};
+  const isRemote = remoteConfig.mode === "distant";
   // États pour la gestion des boîtes personnalisées
   const [isCustomBoxOpen, setIsCustomBoxOpen] = useState(false);
   const [customRam, setCustomRam] = useState(4);
@@ -113,6 +122,7 @@ export default function ClusterFormVir() {
         isZookeeper: isHaSelected ? false : undefined,
         isJournalNode: isHaSelected ? false : undefined,
         isSparkNode: false,
+        
       });
     } else {
       const clusterData = {
@@ -124,12 +134,11 @@ export default function ClusterFormVir() {
         isSparkSelected,
         nodeDetails: [...nodeDetails, currentNodeData],
         customBoxes,
-        remote_ip: "10.200.243.40",
-        remote_user: "User",
-        remote_password: "amiria123",
-        mail: "amiriaayoub@gmail.com"
+        remote_ip,
+        remote_user,
+        remote_password,
       };
-
+      console.log("Données envoyées au backend:", clusterData);
       let endpoint = "";
       if (isHaSelected) {
         var API = process.env.REACT_APP_API_URL;

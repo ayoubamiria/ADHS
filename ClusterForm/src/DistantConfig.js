@@ -5,9 +5,9 @@ import ReactTooltip from "react-tooltip";
 
 const DistantConfig = () => {
   // États d'origine
-  const [ip, setIp] = useState("192.168.0.27");
-  const [login, setLogin] = useState("User");
-  const [password, setPassword] = useState("amiria123");
+  const [ip, setIp] = useState("");
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [remote_os, setOs] = useState("Windows");
   const [hypervisor, setHypervisor] = useState("VirtualBox");
