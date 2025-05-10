@@ -3496,14 +3496,16 @@ def create_cluster_remote():
             inventory_content = "\n".join(inventory_lines)
             # Ajout de variables globales pour définir l'utilisateur SSH et l'interpréteur Python
             global_vars = "[all:vars]\nansible_user=vagrant\nansible_python_interpreter=/usr/bin/python3\nansible_ssh_common_args='-o StrictHostKeyChecking=no'\n\n"
-            inventory_content = global_vars + inventory_content
+            inventory_content = global_vars + "\n".join(inventory_lines)
 
-            inventory_path = os.path.join(folder, "inventory.ini")
-            try:
-                with open(inventory_path, "w", encoding="utf-8") as inv_file:
-                    inv_file.write(inventory_content)
-            except Exception as e:
-                return jsonify({"error": "Error writing inventory file", "details": str(e)}), 500
+            # Chemin complet du fichier inventory sur la VM
+            remote_inventory_path = remote_cluster_folder.rstrip("/") + "/inventory.ini"
+            print("DEBUG - Écriture de l'inventory Ansible sur la VM à :", remote_inventory_path)
+
+            # Écriture via SFTP dans le même dossier que le Vagrantfile
+            with sftp.open(remote_inventory_path, "w") as inv_file:
+                inv_file.write(inventory_content)
+            print("DEBUG - inventory.ini écrit ✔")
 
 
         ## 6. Lancement des VMs via "vagrant up"
@@ -3558,107 +3560,329 @@ def create_cluster_remote():
  # --- Configuration SSH pour le NameNode ---
         try:
             # Générer une clé SSH sur le NameNode si elle n'existe pas et récupérer la clé publique
-            gen_key_cmd = f'vagrant ssh {namenode_hostname} -c "test -f ~/.ssh/id_rsa.pub || ssh-keygen -t rsa -N \'\' -f ~/.ssh/id_rsa"'
-            subprocess.run(gen_key_cmd, shell=True, cwd=folder, check=True)
+# Exemple : génération de la clé SSH sur le NameNode via Vagrant
+            gen_key_cmd = (
+                f'{vagrant_cmd}'
+                f'vagrant ssh {namenode_vm} -c "'
+                # test s’il y a déjà la clé publique, sinon on la crée
+                'test -f ~/.ssh/id_rsa.pub || '
+                'ssh-keygen -t rsa -N \'\' -f ~/.ssh/id_rsa"'
+            )
+            print("Commande gen_key_cmd :", gen_key_cmd)
+            stdin, stdout, stderr = client.exec_command(gen_key_cmd, timeout=300)
 
-            get_pubkey_cmd = f'vagrant ssh {namenode_hostname} -c "cat ~/.ssh/id_rsa.pub"'
-            result_pub = subprocess.run(get_pubkey_cmd, shell=True, cwd=folder,
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                        universal_newlines=True, check=True)
-            namenode_public_key = result_pub.stdout.strip()
-            print("Public key du NameNode récupérée :", namenode_public_key)
+            # On lit la sortie
+            out = stdout.read().decode("utf-8", errors="replace")
+            err = stderr.read().decode("utf-8", errors="replace")
+            exit_status = stderr.channel.recv_exit_status()
+
+            if exit_status != 0:
+                print("stdout gen_key_cmd:", out)
+                print("stderr gen_key_cmd:", err)
+                raise Exception(f"Erreur lors de la génération de la clé SSH: {err}")
+
+            print("✔ Clé SSH générée (ou déjà existante) :", out)
+
+            get_pubkey_cmd = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {namenode_hostname} -c "cat ~/.ssh/id_rsa.pub"'
+                )
+            print("DEBUG – remote get_pubkey_cmd :", get_pubkey_cmd)
+
+            stdin, stdout, stderr = client.exec_command(get_pubkey_cmd, timeout=60)
+
+            # Lecture safe des flux
+            pub_bytes = stdout.read()
+            err_bytes = stderr.read()
+            pub = pub_bytes.decode("utf-8", errors="replace").strip()
+            err = err_bytes.decode("utf-8", errors="replace").strip()
+
+            if err:
+                app.logger.error("Erreur remote get_pubkey_cmd: %s", err)
+                return jsonify({
+                    "error": "Erreur lors de la lecture de la clé publique SSH",
+                    "details": err
+                }), 500
+
+            if not pub:
+                return jsonify({
+                    "error": "Clé publique SSH vide",
+                    "details": "Aucun contenu dans stdout"
+                }), 500
+
+            namenode_public_key = pub
+            print("✔ Public key du NameNode récupérée :", namenode_public_key)
+
         except subprocess.CalledProcessError as e:
             return jsonify({"error": "Error generating or retrieving SSH key on NameNode", "details": str(e)}), 500
 
         # Ajouter la clé du NameNode à son propre authorized_keys (pour permettre SSH local)
+        # vagrant_cmd est déjà défini plus haut, p. ex. :
+        # vagrant_cmd = f'cd /d "{remote_cluster_folder}" && '
+
         try:
+            # Construction de la commande en un seul string
             add_self_key_cmd = (
-                f'vagrant ssh {namenode_hostname} -c "mkdir -p ~/.ssh && '
-                f'grep -q \'{namenode_public_key}\' ~/.ssh/authorized_keys || echo \'{namenode_public_key}\' >> ~/.ssh/authorized_keys && '
-                f'chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"'
+                f'{vagrant_cmd}'
+                f'vagrant ssh {namenode_hostname} -c "'
+                # Crée ~/.ssh si nécessaire
+                'mkdir -p ~/.ssh && '
+                # Vérifie si la clé existe, sinon on l'ajoute
+                f'grep -Fxq \'{namenode_public_key}\' ~/.ssh/authorized_keys || '
+                f'echo \'{namenode_public_key}\' >> ~/.ssh/authorized_keys && '
+                # Fixe les permissions
+                'chmod 700 ~/.ssh && '
+                'chmod 600 ~/.ssh/authorized_keys"'
             )
-            subprocess.run(add_self_key_cmd, shell=True, cwd=folder, check=True)
-        except subprocess.CalledProcessError as e:
-            return jsonify({"error": "Error configuring self SSH key on NameNode", "details": str(e)}), 500
+            print("DEBUG – remote add_self_key_cmd :", add_self_key_cmd)
+
+            # Exécution à distance via SSH
+            stdin, stdout, stderr = client.exec_command(add_self_key_cmd, timeout=60)
+
+            # Lecture safe en bytes puis décodage
+            out = stdout.read().decode("utf-8", errors="replace").strip()
+            err = stderr.read().decode("utf-8", errors="replace").strip()
+
+            if err:
+                app.logger.error("Erreur add_self_key_cmd: %s", err)
+                return jsonify({
+                    "error": "Erreur lors de l’ajout de la clé SSH sur le NameNode",
+                    "details": err
+                }), 500
+
+            print("✔ Clé SSH ajoutée dans authorized_keys du NameNode :", out)
+
+        except Exception as e:
+            app.logger.exception("Exception lors de add_self_key_cmd")
+            return jsonify({
+                "error": "Exception lors de la configuration de la clé SSH sur le NameNode",
+                "details": str(e)
+            }), 500
 
         # --- Configuration SSH pour les autres nœuds ---
         for node in node_details:
-            node_hostname = node.get("hostname")
-            if node_hostname != namenode_hostname:
-                try:
-                    # Générer une clé SSH sur le nœud s'il n'existe pas
-                    gen_key_cmd = f'vagrant ssh {node_hostname} -c "test -f ~/.ssh/id_rsa.pub || ssh-keygen -t rsa -N \'\' -f ~/.ssh/id_rsa"'
-                    subprocess.run(gen_key_cmd, shell=True, cwd=folder, check=True)
+            node_hostname = node["hostname"]
+            if node_hostname == namenode_hostname:
+                continue
 
-                    # Récupérer la clé publique du nœud
-                    get_pubkey_cmd = f'vagrant ssh {node_hostname} -c "cat ~/.ssh/id_rsa.pub"'
-                    result_pub = subprocess.run(get_pubkey_cmd, shell=True, cwd=folder,
-                                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                                universal_newlines=True, check=True)
-                    node_public_key = result_pub.stdout.strip()
-                    print(f"Public key du nœud {node_hostname} récupérée :", node_public_key)
+            # 1) Générer la clé SSH si elle n'existe pas
+            try:
+                cmd_gen = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {node_hostname} -c "'
+                    'test -f ~/.ssh/id_rsa.pub || ssh-keygen -t rsa -N \'\' -f ~/.ssh/id_rsa"'
+                )
+                print("DEBUG – gen_key_cmd for", node_hostname, ":", cmd_gen)
+                stdin, stdout, stderr = client.exec_command(cmd_gen, timeout=120)
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    raise RuntimeError(err)
 
-                    safe_node_public_key = shlex.quote(node_public_key)
+            except Exception as e:
+                app.logger.error("Error generating SSH key on node %s: %s", node_hostname, e)
+                return jsonify({
+                    "error": f"Error generating SSH key on node {node_hostname}",
+                    "details": str(e)
+                }), 500
 
-                    # Ajouter la clé du nœud dans son propre authorized_keys (pour SSH local)
-                    add_self_key_cmd = (
-                        f'vagrant ssh {node_hostname} -c "mkdir -p ~/.ssh && '
-                        f'grep -q {safe_node_public_key} ~/.ssh/authorized_keys || echo {safe_node_public_key} >> ~/.ssh/authorized_keys && '
-                        f'chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"'
-                    )
-                    subprocess.run(add_self_key_cmd, shell=True, cwd=folder, check=True)
+            # 2) Récupérer la clé publique du nœud
+            try:
+                cmd_cat = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {node_hostname} -c "cat ~/.ssh/id_rsa.pub"'
+                )
+                print("DEBUG – get_pubkey_cmd for", node_hostname, ":", cmd_cat)
+                stdin, stdout, stderr = client.exec_command(cmd_cat, timeout=60)
+                pub = stdout.read().decode("utf-8", errors="replace").strip()
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err or not pub:
+                    raise RuntimeError(err or "Empty stdout")
+                node_public_key = pub
+                print(f"✔ Public key for {node_hostname}:", node_public_key)
 
-                    # Ajouter la clé du NameNode dans l'authorized_keys du nœud (pour que le NameNode puisse s'y connecter)
-                    add_namenode_key_cmd = (
-                        f'vagrant ssh {node_hostname} -c "mkdir -p ~/.ssh && '
-                        f'grep -q {shlex.quote(namenode_public_key)} ~/.ssh/authorized_keys || echo {shlex.quote(namenode_public_key)} >> ~/.ssh/authorized_keys && '
-                        f'chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"'
-                    )
-                    subprocess.run(add_namenode_key_cmd, shell=True, cwd=folder, check=True)
+            except Exception as e:
+                app.logger.error("Error retrieving public key on node %s: %s", node_hostname, e)
+                return jsonify({
+                    "error": f"Error retrieving SSH public key on node {node_hostname}",
+                    "details": str(e)
+                }), 500
 
-                    # Ajouter la clé du nœud dans l'authorized_keys du NameNode (pour la connexion inverse)
-                    add_node_key_to_namenode_cmd = (
-                        f'vagrant ssh {namenode_hostname} -c "mkdir -p ~/.ssh && '
-                        f'grep -q {safe_node_public_key} ~/.ssh/authorized_keys || echo {safe_node_public_key} >> ~/.ssh/authorized_keys && '
-                        f'chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"'
-                    )
-                    subprocess.run(add_node_key_to_namenode_cmd, shell=True, cwd=folder, check=True)
+            # 3) Ajouter la clé du nœud dans son authorized_keys
+            try:
+                cmd_add_self = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {node_hostname} -c "'
+                    'mkdir -p ~/.ssh && '
+                    f'grep -Fxq \'{node_public_key}\' ~/.ssh/authorized_keys || '
+                    f'echo \'{node_public_key}\' >> ~/.ssh/authorized_keys && '
+                    'chmod 700 ~/.ssh && '
+                    'chmod 600 ~/.ssh/authorized_keys"'
+                )
+                print("DEBUG – add_self_key_cmd for", node_hostname, ":", cmd_add_self)
+                stdin, stdout, stderr = client.exec_command(cmd_add_self, timeout=60)
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    raise RuntimeError(err)
 
-                except subprocess.CalledProcessError as e:
-                    return jsonify({"error": f"Error configuring SSH for node {node_hostname}", "details": str(e)}), 500
+            except Exception as e:
+                app.logger.error("Error configuring self SSH key on node %s: %s", node_hostname, e)
+                return jsonify({
+                    "error": f"Error configuring self SSH key on node {node_hostname}",
+                    "details": str(e)
+                }), 500
 
+            # 4) Ajouter la clé du NameNode dans l'authorized_keys du nœud
+            try:
+                cmd_add_nn = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {node_hostname} -c "'
+                    'mkdir -p ~/.ssh && '
+                    f'grep -Fxq \'{namenode_public_key}\' ~/.ssh/authorized_keys || '
+                    f'echo \'{namenode_public_key}\' >> ~/.ssh/authorized_keys && '
+                    'chmod 700 ~/.ssh && '
+                    'chmod 600 ~/.ssh/authorized_keys"'
+                )
+                print("DEBUG – add_namenode_key_cmd for", node_hostname, ":", cmd_add_nn)
+                stdin, stdout, stderr = client.exec_command(cmd_add_nn, timeout=60)
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    raise RuntimeError(err)
+
+            except Exception as e:
+                app.logger.error("Error adding NameNode key on node %s: %s", node_hostname, e)
+                return jsonify({
+                    "error": f"Error adding NameNode key on node {node_hostname}",
+                    "details": str(e)
+                }), 500
+
+            # 5) Ajouter la clé du nœud dans l'authorized_keys du NameNode
+            try:
+                cmd_add_to_nn = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {namenode_hostname} -c "'
+                    'mkdir -p ~/.ssh && '
+                    f'grep -Fxq \'{node_public_key}\' ~/.ssh/authorized_keys || '
+                    f'echo \'{node_public_key}\' >> ~/.ssh/authorized_keys && '
+                    'chmod 700 ~/.ssh && '
+                    'chmod 600 ~/.ssh/authorized_keys"'
+                )
+                print("DEBUG – add_node_key_to_namenode_cmd for", node_hostname, ":", cmd_add_to_nn)
+                stdin, stdout, stderr = client.exec_command(cmd_add_to_nn, timeout=60)
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    raise RuntimeError(err)
+
+            except Exception as e:
+                app.logger.error("Error adding node key to NameNode on node %s: %s", node_hostname, e)
+                return jsonify({
+                    "error": f"Error adding node key to NameNode from node {node_hostname}",
+                    "details": str(e)
+                }), 500
 
         # 6. Installation de Hadoop sur le NameNode (si nécessaire) et mise à jour de l'archive dans le dossier partagé
         try:
-            # Vérifier directement sur la VM si l'archive Hadoop existe déjà dans le dossier partagé (/vagrant)
-            check_archive_cmd = f'vagrant ssh {namenode_hostname} -c "test -f /vagrant/hadoop.tar.gz"'
-            result = subprocess.run(check_archive_cmd, shell=True, cwd=folder)
-            if result.returncode != 0:
-                # L'archive n'existe pas dans /vagrant : on installe Hadoop sur le NameNode
+            # 1) Vérifier si l'archive existe déjà dans /vagrant
+            check_archive_cmd = (
+                f'{vagrant_cmd}'
+                f'vagrant ssh {namenode_hostname} -c "test -f /vagrant/hadoop.tar.gz"'
+            )
+            print("DEBUG – check_archive_cmd:", check_archive_cmd)
+            stdin, stdout, stderr = client.exec_command(check_archive_cmd, timeout=60)
+            rc = stdout.channel.recv_exit_status()  # code de retour de la commande test
+            if rc != 0:
+                # 2) Installer Hadoop sur le NameNode
                 hadoop_install_cmd = (
-                    f'vagrant ssh {namenode_hostname} -c "sudo apt-get update && sudo apt-get install -y wget && '
-                    f'wget -O /tmp/hadoop.tar.gz https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz && '
-                    f'test -s /tmp/hadoop.tar.gz && '
-                    f'sudo tar -xzvf /tmp/hadoop.tar.gz -C /opt && '
-                    f'sudo mv /opt/hadoop-3.3.1 /opt/hadoop && '
-                    f'rm /tmp/hadoop.tar.gz"'
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {namenode_hostname} -c "'
+                    'sudo apt-get update && '
+                    'sudo apt-get install -y wget && '
+                    'wget -O /tmp/hadoop.tar.gz '
+                    'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz && '
+                    'test -s /tmp/hadoop.tar.gz && '
+                    'sudo tar -xzvf /tmp/hadoop.tar.gz -C /opt && '
+                    'sudo mv /opt/hadoop-3.3.1 /opt/hadoop && '
+                    'rm /tmp/hadoop.tar.gz"'
                 )
-                subprocess.run(hadoop_install_cmd, shell=True, cwd=folder, check=True)
+                print("DEBUG – hadoop_install_cmd:", hadoop_install_cmd)
+                # 1) Lancer la commande avec un pseudo‐terminal pour activer la barre de progression
+                stdin, stdout, stderr = client.exec_command(
+                    hadoop_install_cmd,
+                    timeout=900,
+                    get_pty=True
+                )
 
-                # Créer l'archive Hadoop sur le NameNode
-                tar_hadoop_cmd = f'vagrant ssh {namenode_hostname} -c "sudo tar -czf /tmp/hadoop.tar.gz -C /opt hadoop"'
-                subprocess.run(tar_hadoop_cmd, shell=True, cwd=folder, check=True)
+                # 2) Lire et afficher chaque ligne **en temps réel**
+                while not stdout.channel.exit_status_ready():
+                    # Tant qu’on n’a pas terminé
+                    if stdout.channel.recv_ready():
+                        line = stdout.channel.recv(1024).decode("utf-8", errors="replace")
+                        # On imprime brut, sans filtrage
+                        print(line, end="")
 
-                # Copier l'archive dans le dossier partagé (/vagrant)
-                copy_to_shared_cmd = f'vagrant ssh {namenode_hostname} -c "sudo cp /tmp/hadoop.tar.gz /vagrant/hadoop.tar.gz"'
-                subprocess.run(copy_to_shared_cmd, shell=True, cwd=folder, check=True)
+                # 3) Récupérer le code de retour
+                exit_status = stdout.channel.recv_exit_status()
+                if exit_status != 0:
+                    # Lire stderr complet pour le diagnostic
+                    err = stderr.read().decode("utf-8", errors="replace")
+                    print("\nERROR – stderr hadoop_install:\n", err)
+                    return jsonify({
+                        "error": "Échec de l'installation de Hadoop sur le NameNode",
+                        "details": err
+                    }), 500
+
+                print("\n✔ Installation de Hadoop terminée.")
+
+                if exit_status != 0:
+                    return jsonify({
+                        "error": "Échec de l'installation de Hadoop sur le NameNode",
+                        "details": err or out
+                    }), 500
+
+
+                # 3) Créer l'archive Hadoop sur le NameNode
+                tar_hadoop_cmd = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {namenode_hostname} -c '
+                    '"sudo tar -czf /tmp/hadoop.tar.gz -C /opt hadoop"'
+                )
+                print("DEBUG – tar_hadoop_cmd:", tar_hadoop_cmd)
+                stdin, stdout, stderr = client.exec_command(tar_hadoop_cmd, timeout=300)
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    raise RuntimeError(err)
+
+                # 4) Copier l'archive dans le dossier partagé (/vagrant)
+                copy_to_shared_cmd = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {namenode_hostname} -c '
+                    '"sudo cp /tmp/hadoop.tar.gz /vagrant/hadoop.tar.gz"'
+                )
+                print("DEBUG – copy_to_shared_cmd:", copy_to_shared_cmd)
+                stdin, stdout, stderr = client.exec_command(copy_to_shared_cmd, timeout=120)
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    raise RuntimeError(err)
+
             else:
-                print("L'archive Hadoop existe déjà dans /vagrant/hadoop.tar.gz, on l'utilise pour mettre à jour le NameNode.")
-                # Même si l'archive existe, on extrait sur le NameNode pour mettre à jour /opt/hadoop
-                extract_cmd = f'vagrant ssh {namenode_hostname} -c "sudo rm -rf /opt/hadoop && sudo tar -xzf /vagrant/hadoop.tar.gz -C /opt"'
-                subprocess.run(extract_cmd, shell=True, cwd=folder, check=True)
-        except subprocess.CalledProcessError as e:
-            return jsonify({"error": "Error installing Hadoop on NameNode", "details": str(e)}), 500
+                print("L'archive Hadoop existe déjà, extraction/upate…")
+                # 5) Extraire ou mettre à jour /opt/hadoop à partir de /vagrant/hadoop.tar.gz
+                extract_cmd = (
+                    f'{vagrant_cmd}'
+                    f'vagrant ssh {namenode_hostname} -c '
+                    '"sudo rm -rf /opt/hadoop && sudo tar -xzf /vagrant/hadoop.tar.gz -C /opt"'
+                )
+                print("DEBUG – extract_cmd:", extract_cmd)
+                stdin, stdout, stderr = client.exec_command(extract_cmd, timeout=300)
+                err = stderr.read().decode("utf-8", errors="replace").strip()
+                if err:
+                    raise RuntimeError(err)
+
+        except Exception as e:
+            app.logger.error("Error installing/updating Hadoop on NameNode: %s", e)
+            return jsonify({
+                "error": "Error installing or updating Hadoop on NameNode",
+                "details": str(e)
+            }), 500
 
         # 7. Copier l'archive Hadoop vers les autres nœuds depuis le dossier partagé
         for node in node_details:
@@ -3670,7 +3894,8 @@ def create_cluster_remote():
                         f'sudo rm -rf /opt/hadoop && '
                         f'sudo tar -xzf /vagrant/hadoop.tar.gz -C /opt"'
                     )
-                    subprocess.run(copy_hadoop_cmd, shell=True, cwd=folder, check=True)
+                    subprocess.run(copy_hadoop_cmd, shell=True, cwd=remote_cluster_folder, check=True)
+                    print("copy")
                 except subprocess.CalledProcessError as e:
                     return jsonify({
                         "error": f"Error copying Hadoop to node {target_hostname}",
@@ -3678,28 +3903,54 @@ def create_cluster_remote():
                     }), 500
 
     # Installer Java et net-tools et configurer les variables d'environnement sur tous les nœuds
+# --- Installation de Java, net-tools et configuration des variables d'environnement ---
         for node in node_details:
-                target_hostname = node.get("hostname")
-                try:
-                    install_java_net_cmd = (
-                        f'vagrant ssh {target_hostname} -c "sudo apt-get update && sudo apt-get install -y default-jdk net-tools python3"'
-                    )
-                    subprocess.run(install_java_net_cmd, shell=True, cwd=folder, check=True)
-                    configure_env_cmd = (
-                        f'vagrant ssh {target_hostname} -c "echo \'export JAVA_HOME=/usr/lib/jvm/default-java\' >> ~/.bashrc && '
-                        f'echo \'export HADOOP_HOME=/opt/hadoop\' >> ~/.bashrc && '
-                        f'echo \'export PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin\' >> ~/.bashrc"'
-                    )
-                    subprocess.run(configure_env_cmd, shell=True, cwd=folder, check=True)
-                except subprocess.CalledProcessError as e:
-                    return jsonify({"error": f"Error installing Java/net/python or configuring environment on node {target_hostname}", "details": str(e)}), 500
+            target = node["hostname"]
 
+            install_java_net_cmd = (
+                f'{vagrant_cmd}'
+                f'vagrant ssh {target} -c "'
+                'sudo apt-get update && '
+                'sudo apt-get install -y default-jdk net-tools python3 && '
+                # Ajout des variables dans .bashrc
+                'echo \'export JAVA_HOME=/usr/lib/jvm/default-java\' >> ~/.bashrc && '
+                'echo \'export HADOOP_HOME=/opt/hadoop\' >> ~/.bashrc && '
+                'echo \'export PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin\' >> ~/.bashrc"'
+            )
+            print(f"DEBUG – install_java_net_cmd for {target}:", install_java_net_cmd)
+
+            stdin, stdout, stderr = client.exec_command(install_java_net_cmd, timeout=300, get_pty=True)
+
+            # On lit la sortie en temps réel pour voir la progression et les logs
+            while not stdout.channel.exit_status_ready():
+                if stdout.channel.recv_ready():
+                    chunk = stdout.channel.recv(1024).decode("utf-8", errors="replace")
+                    print(chunk, end="")
+
+            # Récupère le code de retour et les éventuelles erreurs
+            exit_status = stdout.channel.recv_exit_status()
+            err = stderr.read().decode("utf-8", errors="replace").strip()
+
+            if exit_status != 0 or err:
+                print(f"\nERROR – stderr install_java_net_cmd for {target}:\n", err)
+                return jsonify({
+                    "error": f"Error installing Java/net-tools on node {target}",
+                    "details": err
+                }), 500
+
+            print(f"\n✔ Java & net-tools installed on {target}")
 
     # 7. Création des playbooks Ansible et des templates Jinja2 pour la configuration Hadoop
 
         # Créer le dossier "templates" pour stocker les fichiers de configuration Jinja2
-        templates_dir = os.path.join(folder, "templates")
+        local_folder = remote_cluster_folder.lstrip("/")            # retire le slash initial
+        local_folder = local_folder.replace("/", "\\")              # slash Unix → backslash
+        print("DEBUG – local_folder for templates:", local_folder)
+
+        # Maintenant tu peux créer templates_dir normalement
+        templates_dir = os.path.join(local_folder, "templates")
         os.makedirs(templates_dir, exist_ok=True)
+        print("DEBUG – templates_dir créé :", templates_dir)
 
         # Template pour core-site.xml
         core_site_template = """<configuration>
@@ -3817,10 +4068,11 @@ def create_cluster_remote():
 
     """
 
-
-        hadoop_config_playbook_path = os.path.join(folder, "hadoop_config.yml")
+        hadoop_config_playbook_path = os.path.join(local_folder, "hadoop_config.yml")
+        print("DEBUG – Écriture de hadoop_config.yml à :", hadoop_config_playbook_path)
         with open(hadoop_config_playbook_path, "w", encoding="utf-8") as f:
             f.write(hadoop_config_playbook)
+        print("✔ hadoop_config.yml écrit")
     
         # Création du playbook Ansible pour démarrer les services Hadoop
         hadoop_start_playbook = """---
@@ -3925,10 +4177,12 @@ def create_cluster_remote():
         var: jps_output.stdout
 
     """
-        hadoop_start_playbook_path = os.path.join(folder, "hadoop_start_services.yml")
+        hadoop_start_playbook_path = os.path.join(local_folder, "hadoop_start_services.yml")
+        print("DEBUG – Écriture de hadoop_start_services.yml à :", hadoop_start_playbook_path)
         with open(hadoop_start_playbook_path, "w", encoding="utf-8") as f:
             f.write(hadoop_start_playbook)
-
+        print("✔ hadoop_start_services.yml écrit")
+        # 8. Exécuter le playbook de configuration Hadoop sur le NameNode
         # Définir un préfixe pour la commande ansible-playbook en fonction de l'OS
         ansible_cmd_prefix = ""
         if platform.system() == "Windows":
@@ -3936,7 +4190,7 @@ def create_cluster_remote():
 
         # 8. Exécuter le playbook de configuration Hadoop sur le NameNode
         try:
-            inventory_file_in_vm = os.path.basename(inventory_path)
+            inventory_file_in_vm = os.path.basename(remote_inventory_path)
             config_playbook_cmd = (
                 f'vagrant ssh {namenode_hostname} -c "cd /vagrant && ansible-playbook -i {inventory_file_in_vm} hadoop_config.yml"'
             )
@@ -3958,13 +4212,7 @@ def create_cluster_remote():
             os.makedirs(local_cluster_local_folder)
   # -------------------- 12. Copie du dossier du cluster depuis la machine distante vers la machine source --------------------
 
-        # Ici, on copie au moins le Vagrantfile (vous pouvez étendre à d'autres fichiers)
-        local_vagrantfile_path = os.path.join(local_cluster_local_folder, "Vagrantfile")
-        with sftp.open(remote_vagrantfile_path, "rb") as remote_vf:
-            vagrant_data = remote_vf.read()
-        with open(local_vagrantfile_path, "wb") as local_vf:
-            local_vf.write(vagrant_data)
-        print("DEBUG - Vagrantfile copié localement :", local_vagrantfile_path)
+
         cluster_details = {
             "message": f"Cluster '{cluster_name}' créé avec succès",
             "cluster_name": cluster_name,
@@ -3972,7 +4220,14 @@ def create_cluster_remote():
             "node_details": node_details,
             "namenode_ip": namenode_ip,
             "vagrant_up_output": out_vagrant,
-            "local_vagrantfile": os.path.abspath(local_vagrantfile_path),
+            "namenode_hostname": namenode_hostname,
+            "namenode_public_key": namenode_public_key,
+            "remote_ip": remote_ip,
+            "remote_user": remote_user,
+            "remote_os": remote_os,
+            "remote_inventory_path": remote_inventory_path,
+            
+            "remote_cluster_folder": remote_cluster_folder,
             "hadoop_ports": {
                 "namenode_web": "9870",
                 "datanode": "9864",
@@ -6336,4 +6591,4 @@ def create_cluster_HA_spark_remote():
         return jsonify({"error": str(e)}), 500
    
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

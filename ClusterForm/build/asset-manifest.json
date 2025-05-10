@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/clusterform/static/css/main.8feaebf0.css",
-    "main.js": "/clusterform/static/js/main.c7e71977.js",
-    "static/js/488.51b8b69f.chunk.js": "/clusterform/static/js/488.51b8b69f.chunk.js",
-    "index.html": "/clusterform/index.html",
-    "main.8feaebf0.css.map": "/clusterform/static/css/main.8feaebf0.css.map",
-    "main.c7e71977.js.map": "/clusterform/static/js/main.c7e71977.js.map",
-    "488.51b8b69f.chunk.js.map": "/clusterform/static/js/488.51b8b69f.chunk.js.map"
+    "main.css": "/static/css/main.c0777ab1.css",
+    "main.js": "/static/js/main.f3d0de3f.js",
+    "static/js/488.51b8b69f.chunk.js": "/static/js/488.51b8b69f.chunk.js",
+    "index.html": "/index.html",
+    "main.c0777ab1.css.map": "/static/css/main.c0777ab1.css.map",
+    "main.f3d0de3f.js.map": "/static/js/main.f3d0de3f.js.map",
+    "488.51b8b69f.chunk.js.map": "/static/js/488.51b8b69f.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.8feaebf0.css",
-    "static/js/main.c7e71977.js"
+    "static/css/main.c0777ab1.css",
+    "static/js/main.f3d0de3f.js"
   ]
 }
